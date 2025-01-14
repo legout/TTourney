@@ -29,8 +29,10 @@ A Python library for managing table tennis tournaments with support for various 
 
 ## Installation
 
-```bash
-pip install ttourney
+```
+git clone https://github.com/legout/ttourney
+cd ttourney
+uv sync
 ```
 
 ## Quick Start
