@@ -344,12 +344,12 @@ class BaseGroup:
             .filter(pl.col("winner") == player_id)
         ).shape[0]
 
-    def _get_ranking(self, round: int | None = None) -> List[Player]:
-        raise NotImplementedError
-
     @property
     def played_matches(self) -> Set[Tuple[str, str]]:
         return self._get_played_matches()
+
+    def _get_ranking(self, round: int | None = None) -> List[Player]:
+        raise NotImplementedError
 
     @property
     def ranking(self) -> List[Player]:
@@ -358,13 +358,12 @@ class BaseGroup:
     def gen_matches(self) -> List[Match]:
         raise NotImplementedError
 
-
 class SwissSystemGroup(BaseGroup):
     def __init__(self, players: List[Player], name: str, date: dt.date):
         super().__init__(players, name)
         self.date = date
 
-    def gen_first_round(self):
+    def _gen_first_round(self):
         top_half = self.players[: len(self.players) // 2]
         bottom_half = self.players[len(self.players) // 2:]
         top_half.sort(key=lambda p: p.score, reverse=True)
@@ -375,7 +374,7 @@ class SwissSystemGroup(BaseGroup):
         for p1, p2 in zip(top_half, bottom_half):
             self.matches.append(Match(p1, p2, self.round))
 
-    def gen_next_round(self) -> List[Match]:
+    def _gen_next_round(self) -> List[Match]:
         sorted_players = self.players[:]
         sorted_players.sort(key=lambda p: self.wins(p.id), reverse=True)
 
@@ -405,7 +404,7 @@ class SwissSystemGroup(BaseGroup):
         self.matches.extend(matches)
         self.round += 1
 
-    def gen_matches(self) -> List[Match]:
+    def _gen_matches(self) -> List[Match]:
         if self.round == 0:
             self.gen_first_round()
         else:
@@ -471,267 +470,322 @@ class SwissSystemGroup(BaseGroup):
 
         return players
 
-    # def get_rankings(self) -> List[Player]:
-    #     """Get the ranking of players in the group using the Swiss system.
+class BergerTableGroup(BaseGroup):
+    def __init__(self, players: List[Player], name: str, date: dt.date):
+        super().__init__(players, name)
+        self.date = date
 
-    #     Order:
-    #     1. Number of wins
-    #     2. Buchholz score
-    #     3. Direct encounters (if no circular dependency)
-    #     4. Set difference (all matches)
-    #     5. Ball difference (all matches)
-    #     """
+    def _gen_matches(self) -> List[Match]:
+        """Generate matches using the Berger Table system.
 
-    #     def buchholz_score(player: Player) -> int:
-    #         score = 0
-    #         for match in self.matches:
-    #             if match.player1 == player:
-    #                 score += self.results[match.player2.id].wins
-    #             elif match.player2 == player:
-    #                 score += self.results[match.player1.id].wins
-    #         return score
+        The Berger Table is a method used to schedule round-robin tournaments.
+        It ensures that each player plays against every other player exactly once.
+        """
+        n = len(self.players)
+        rounds = []
+        players = self.players[:]
+        
+        # Add a dummy player for odd number of players
+        if n % 2 == 1:
+            players.append(None)
+            n += 1
 
-    #     def direct_encounter_matrix(players: List[Player]) -> Dict[str, Dict[str, int]]:
-    #         """Returns matrix of direct encounter results between players"""
-    #         matrix = {p.id: {op.id: 0 for op in players} for p in players}
-    #         for match in self.matches:
-    #             if match.player1 in players and match.player2 in players:
-    #                 matrix[match.winner.id][match.loser.id] = 1
-    #         return matrix
+        # Generate all rounds
+        for round_num in range(n - 1):
+            round_matches = []
+            
+            # Generate matches for this round
+            for i in range(n // 2):
+                p1 = players[i]
+                p2 = players[n - 1 - i]
+                if p1 and p2:  # Only create match if both players are real
+                    match = Match(p1, p2, round_num + 1, self.date)
+                    round_matches.append(match)
+            
+            # Rotate players for next round: keep first player fixed, rotate others
+            players.insert(1, players.pop())
+            rounds.append(round_matches)
 
-    #     def has_circular_dependency(players: List[Player]) -> bool:
-    #         matrix = direct_encounter_matrix(players)
-    #         for p1 in players:
-    #             for p2 in players:
-    #                 for p3 in players:
-    #                     if (
-    #                         matrix[p1.id][p2.id]
-    #                         and matrix[p2.id][p3.id]
-    #                         and matrix[p3.id][p1.id]
-    #                     ):
-    #                         return True
-    #         return False
+        # Add all matches to the group
+        self.matches.extend([match for round in rounds for match in round])
+        return self.matches
 
-    #     # First sort by wins and Buchholz
-    #     players = self.players[:]
-    #     players.sort(
-    #         key=lambda p: (self.results[p.id].wins, buchholz_score(p)), reverse=True
-    #     )
+    def _get_ranking(self, round: int | None = None) -> List[Player]:
+        """Same ranking system as Swiss, but Berger Table doesn't need Buchholz scores"""
+        if round is None:
+            round = self.rounds_completed
 
-    #     # Group players with same wins and Buchholz
-    #     ranking = []
-    #     i = 0
-    #     while i < len(players):
-    #         group_start = i
-    #         wins = self.results[players[i].id].wins
-    #         buch = buchholz_score(players[i])
+        def sort_key(player: Player) -> tuple:
+            wins = self._get_wins(player.id, round)
+            set_diff = self._get_set_difference(player.id, round)
+            ball_diff = self._get_ball_difference(player.id, round)
+            player_score = player.id  # Using player ID as score (smaller is better)
 
-    #         while (
-    #             i < len(players)
-    #             and self.results[players[i].id].wins == wins
-    #             and buchholz_score(players[i]) == buch
-    #         ):
-    #             i += 1
+            return (wins, set_diff, -player_score, ball_diff)
 
-    #         group = players[group_start:i]
-    #         if len(group) > 2 and has_circular_dependency(group):
-    #             # Sort group by overall set/ball difference
-    #             group.sort(
-    #                 key=lambda p: (
-    #                     self.results[p.id].sets_won - self.results[p.id].sets_lost,
-    #                     self.results[p.id].balls_won - self.results[p.id].balls_lost,
-    #                 ),
-    #                 reverse=True,
-    #             )
+        # Sort players by primary criteria
+        players = self.players[:]
+        players.sort(key=sort_key, reverse=True)
 
-    #         ranking.extend(group)
-    #     self.ranking[self.round] = ranking
-    #     return ranking
+        # Handle tied players similar to SwissSystemGroup
+        i = 0
+        while i < len(players):
+            tied_start = i
+            while (
+                i + 1 < len(players)
+                and self._get_wins(players[i].id, round)
+                == self._get_wins(players[i + 1].id, round)
+            ):
+                i += 1
 
-    # def _get_rankings_classic(self) -> List[Player]:
-    #     """
-    #     Get the ranking of players in the group.
+            if i > tied_start:
+                tied_players = players[tied_start:i + 1]
+                # Sort tied players by direct matches
+                tied_players.sort(
+                    key=lambda p: self._get_direct_match_wins(
+                        p.id, [tp.id for tp in tied_players], round
+                    ),
+                    reverse=True,
+                )
+                players[tied_start:i + 1] = tied_players
 
-    #     The ranking is based on the number of wins, sets won and lost.
-    #     If two players have the same number of wins, the player with the most
-    #     sets won is ranked higher. If the number of sets won is the same, the
-    #     player with the highest difference between sets won and sets lost is
-    #     ranked higher. If all these values are the same, the direct match result
-    #     is used to determine the ranking. If there is no direct match result, or
-    #     if the direct match was a draw, or if there is a group of players with
-    #     the same ranking values, and the direct match result is not enough to
-    #     determine the ranking, the balls won and lost are used to determine.
-    #     """
+            i += 1
 
-    #     def get_ranking_key(player: Player):
-    #         r = self.results[player.id]
-    #         return (r.wins, r.sets_won, r.sets_won - r.sets_lost)
+        return players
 
-    #     def compare_group(players: List[Player]):
-    #         direct_wins = {p.id: 0 for p in players}
-    #         for match in self.matches:
-    #             if match.player1 in players and match.player2 in players:
-    #                 direct_wins[match.winner.id] += 1
+class RoundRobinGroup(BaseGroup):
+    def __init__(self, players: List[Player], name: str, date: dt.date):
+        super().__init__(players, name)
+        self.date = date
 
-    #         def _get_ranking_key(player: Player):
-    #             return (direct_wins[player.id], get_ranking_key(player))
+    def _gen_matches(self) -> List[Match]:
+        """Simple round robin where each player plays against every other once"""
+        n = len(self.players)
+        for i, p1 in enumerate(self.players):
+            for j in range(i + 1, n):
+                p2 = self.players[j]
+                round_num = i + 1  # Simple round assignment
+                self.matches.append(Match(p1, p2, round_num, self.date))
+        return self.matches
 
-    #         return sorted(players, key=_get_ranking_key, reverse=True)
+    def _get_ranking(self, round: int | None = None) -> List[Player]:
+        """Same ranking system as BergerTable"""
+        if round is None:
+            round = self.rounds_completed
 
-    #     return sorted(self.players, key=get_ranking_key, reverse=True)
+        def sort_key(player: Player) -> tuple:
+            wins = self._get_wins(player.id, round)
+            set_diff = self._get_set_difference(player.id, round)
+            ball_diff = self._get_ball_difference(player.id, round)
+            player_score = player.id  # Using player ID as score (smaller is better)
 
-    # def _get_rankings_swiss(self) -> List[Player]:
-    #     """
-    #     Get the ranking of players in the group using the Swiss system.
+            return (wins, set_diff, -player_score, ball_diff)
 
-    #     Order:
-    #     1. Number of wins
-    #     2. Buchholz score
-    #     3. Direct encounters (if no circular dependency)
-    #     4. Set difference (all matches)
-    #     5. Ball difference (all matches)
-    #     """
+        # Sort players by primary criteria
+        players = self.players[:]
+        players.sort(key=sort_key, reverse=True)
 
-    #     def buchholz_score(player: Player) -> int:
-    #         score = 0
-    #         for match in self.matches:
-    #             if match.player1 == player:
-    #                 score += self.results[match.player2.id].wins
-    #             elif match.player2 == player:
-    #                 score += self.results[match.player1.id].wins
-    #         return score
+        # Handle tied players similar to SwissSystemGroup
+        i = 0
+        while i < len(players):
+            tied_start = i
+            while (
+                i + 1 < len(players)
+                and self._get_wins(players[i].id, round)
+                == self._get_wins(players[i + 1].id, round)
+            ):
+                i += 1
 
-    #     def direct_encounter_matrix(players: List[Player]) -> Dict[str, Dict[str, int]]:
-    #         """Returns matrix of direct encounter results between players"""
-    #         matrix = {p.id: {op.id: 0 for op in players} for p in players}
-    #         for match in self.matches:
-    #             if match.player1 in players and match.player2 in players:
-    #                 matrix[match.winner.id][match.loser.id] = 1
-    #         return matrix
+            if i > tied_start:
+                tied_players = players[tied_start:i + 1]
+                # Sort tied players by direct matches
+                tied_players.sort(
+                    key=lambda p: self._get_direct_match_wins(
+                        p.id, [tp.id for tp in tied_players], round
+                    ),
+                    reverse=True,
+                )
+                players[tied_start:i + 1] = tied_players
 
-    #     def has_circular_dependency(players: List[Player]) -> bool:
-    #         matrix = direct_encounter_matrix(players)
-    #         for p1 in players:
-    #             for p2 in players:
-    #                 for p3 in players:
-    #                     if (
-    #                         matrix[p1.id][p2.id]
-    #                         and matrix[p2.id][p3.id]
-    #                         and matrix[p3.id][p1.id]
-    #                     ):
-    #                         return True
-    #         return False
+            i += 1
 
-    #     # First sort by wins and Buchholz
-    #     players = self.players[:]
-    #     players.sort(
-    #         key=lambda p: (self.results[p.id].wins, buchholz_score(p)), reverse=True
-    #     )
+        return players
 
-    #     # Group players with same wins and Buchholz
-    #     ranking = []
-    #     i = 0
-    #     while i < len(players):
-    #         group_start = i
-    #         wins = self.results[players[i].id].wins
-    #         buch = buchholz_score(players[i])
+class KnockoutGroup(BaseGroup):
+    """Base class for knockout tournaments with qualification rounds"""
+    
+    def __init__(self, players: List[Player], name: str, date: dt.date):
+        super().__init__(players, name)
+        self.date = date
+        self.stage_names = {
+            2: "Final",
+            4: "Semi Finals",
+            8: "Quarter Finals",
+            16: "Round of 16",
+            32: "Round of 32",
+        }
 
-    #         while (
-    #             i < len(players)
-    #             and self.results[players[i].id].wins == wins
-    #             and buchholz_score(players[i]) == buch
-    #         ):
-    #             i += 1
+    def _get_knockout_size(self) -> int:
+        """Get nearest power of 2 that fits the tournament"""
+        n = len(self.players)
+        size = 2
+        while size < n:
+            size *= 2
+        return size // 2  # We want the largest size that's smaller than n
+        
+    def _get_qualified_count(self) -> int:
+        """Get number of players directly qualifying for main round"""
+        knockout_size = self._get_knockout_size()
+        return max(0, 2 * knockout_size - len(self.players))
+        
+    def _get_qualification_pairs(self) -> List[Tuple[Player, Player]]:
+        """Match players for qualification rounds"""
+        #knockout_size = self._get_knockout_size()
+        qualified_count = self._get_qualified_count()
+        
+        # Sort players by score
+        sorted_players = sorted(self.players, key=lambda p: p.score, reverse=True)
+        
+        # Top players qualify directly
+        #qualified = sorted_players[:qualified_count]
+        remaining = sorted_players[qualified_count:]
+        
+        # Pair remaining players for qualification
+        # Higher ranked vs lower ranked
+        pairs = []
+        n = len(remaining)
+        for i in range(n // 2):
+            pairs.append((remaining[i], remaining[n-1-i]))
+            
+        return pairs
+        
+    def _assign_stage_name(self, round_size: int) -> str:
+        return self.stage_names.get(round_size, f"Round of {round_size}")
 
-    #         group = players[group_start:i]
-    #         if len(group) > 2 and has_circular_dependency(group):
-    #             # Sort group by overall set/ball difference
-    #             group.sort(
-    #                 key=lambda p: (
-    #                     self.results[p.id].sets_won - self.results[p.id].sets_lost,
-    #                     self.results[p.id].balls_won - self.results[p.id].balls_lost,
-    #                 ),
-    #                 reverse=True,
-    #             )
+class SingleEliminationGroup(KnockoutGroup):
+    def _get_seeded_pairs(self, players: List[Player], round_size: int) -> List[Tuple[Player, Player]]:
+        """Create properly seeded pairs for a knockout round.
+        Uses standard tournament seeding to keep top seeds apart until later rounds."""
+        if len(players) <= 2:
+            return [(players[0], players[1])] if len(players) == 2 else []
 
-    #         ranking.extend(group)
-    #     self.ranking[self.round] = ranking
-    #     return ranking
+        # Create seed positions for perfect bracket
+        seeds = list(range(1, round_size + 1))
+        
+        # Standard tournament bracket ordering
+        ordered_positions = []
+        def fill_bracket(start: int, end: int):
+            if start == end:
+                return
+            mid = (start + end) // 2
+            ordered_positions.extend([start + 1, end + 1])
+            fill_bracket(start, mid - 1)
+            fill_bracket(mid, end - 1)
+            
+        fill_bracket(0, round_size - 1)
+        
+        # Map players to their positions
+        seeded_players = sorted(players, key=lambda p: p.score, reverse=True)
+        player_map = {pos: player for pos, player in zip(seeds, seeded_players)}
+        
+        # Create pairs based on ordered positions
+        pairs = []
+        for i in range(0, len(ordered_positions), 2):
+            if i + 1 < len(ordered_positions):
+                p1 = player_map.get(ordered_positions[i])
+                p2 = player_map.get(ordered_positions[i + 1])
+                if p1 and p2:  # Only create pair if both players exist
+                    pairs.append((p1, p2))
+        
+        return pairs
 
-    # def _generate_berger_table_matches(self) -> List[Match]:
-    #     """
-    #     Generate matches using the Berger Table system.
+    def _gen_matches(self) -> List[Match]:
+        """Generate knockout matches with qualification rounds and proper seeding"""
+        if len(self.matches) > 0:
+            return []  # All matches generated at start
+            
+        round_num = 1
+        knockout_size = self._get_knockout_size()
+        qualified_count = self._get_qualified_count()
+        
+        # Sort players by score for initial seeding
+        sorted_players = sorted(self.players, key=lambda p: p.score, reverse=True)
+        
+        # Handle qualification round if needed
+        qual_pairs = self._get_qualification_pairs()
+        qual_matches = []
+        for p1, p2 in qual_pairs:
+            match = Match(p1, p2, round_num, self.date)
+            match.stage = "Qualification"
+            qual_matches.append(match)
+        
+        self.matches.extend(qual_matches)
+        round_num += 1
+        
+        # Prepare players for first knockout round
+        knockout_players = sorted_players[:qualified_count]
+        knockout_players.extend([None] * len(qual_matches))
+        
+        # Generate knockout rounds with proper seeding
+        current_round_size = len(knockout_players)
+        while current_round_size > 1:
+            stage_name = self._assign_stage_name(current_round_size)
+            pairs = self._get_seeded_pairs(knockout_players, current_round_size)
+            
+            round_matches = []
+            for p1, p2 in pairs:
+                match = Match(p1, p2, round_num, self.date)
+                match.stage = stage_name
+                round_matches.append(match)
+            
+            self.matches.extend(round_matches)
+            knockout_players = [None] * (current_round_size // 2)
+            current_round_size //= 2
+            round_num += 1
+        
+        return self.matches
 
-    #     The Berger Table is a method used to schedule round-robin tournaments.
-    #     It ensures that each player plays against every other player exactly once.
-    #     """
-    #     n = len(self.players)
-    #     rounds = []
-    #     players = self.players[:]
-    #     if n % 2 == 1:
-    #         players.append(None)  # Add a dummy player for odd number of players
+    def _get_ranking(self, round: int | None = None) -> List[Player]:
+        """Ranking based on stage reached and original seeding"""
+        if round is None:
+            round = self.rounds_completed
+            
+        # Track furthest stage reached by each player
+        player_stages = {p.id: ("Not Qualified", -1, p.score) for p in self.players}
+        
+        # Order stages by importance
+        stage_order = {
+            "Final": 6,
+            "Semi Finals": 5,
+            "Quarter Finals": 4,
+            "Round of 16": 3,
+            "Round of 32": 2,
+            "Qualification": 1,
+        }
+        
+        for match in self.matches:
+            if match.round <= round and match.is_completed:
+                stage_value = stage_order.get(match.stage, 0)
+                
+                # Winner advances
+                if match.winner:
+                    current_stage = player_stages[match.winner.id]
+                    player_stages[match.winner.id] = (match.stage, stage_value, current_stage[2])
+                
+                # Loser gets eliminated at this stage
+                if match.loser:
+                    current_stage = player_stages[match.loser.id]
+                    player_stages[match.loser.id] = (match.stage, stage_value, current_stage[2])
+        
+        # Sort players by stage reached, then by original score
+        players = self.players[:]
+        players.sort(key=lambda p: player_stages[p.id], reverse=True)
+        return players
 
-    #     for round in range(n - 1):
-    #         round_matches = []
-    #         for i in range(n // 2):
-    #             p1 = players[i]
-    #             p2 = players[n - 1 - i]
-    #             if p1 and p2:
-    #                 round_matches.append(Match(p1, p2))
-    #         players.insert(1, players.pop())  # Rotate players
-    #         rounds.append(round_matches)
-    #         self.round += 1
-
-    #     self.matches = [match for round in rounds for match in round]
-    #     return self.matches
-
-    # def _generate_round_robin_matches(self) -> List[Match]:
-    #     """
-    #     Generate matches using the round-robin system.
-
-    #     In a round-robin tournament, each player plays against every other player in the group.
-    #     """
-    #     matches = []
-    #     for i, p1 in enumerate(self.players):
-    #         for p2 in self.players[i + 1 :]:
-    #             matches.append(Match(p1, p2))
-    #     self.matches = matches
-    #     return matches
-
-    # def _generate_swiss_system_matches(self) -> List[Match]:
-    #     """
-    #     Generate matches using the Swiss system.
-
-    #     In the Swiss system, players are paired based on their current scores,
-    #     with the goal of matching players with similar performance.
-    #     """
-    #     players = self.players[:]
-    #     random.shuffle(players)
-    #     sorted_players = sorted(
-    #         players, key=lambda p: self.results[p.id].wins, reverse=True
-    #     )
-    #     matches = []
-    #     n = len(sorted_players)
-
-    #     # Add a dummy player if the number of players is odd
-    #     if n % 2 == 1:
-    #         sorted_players.append(None)
-
-    #     while len(sorted_players) > 1:
-    #         p1 = sorted_players.pop(0)
-    #         p2 = None
-    #         for i, potential_opponent in enumerate(sorted_players):
-    #             if (
-    #                 potential_opponent
-    #                 and (p1.id, potential_opponent.id) not in self.played_matches
-    #             ):
-    #                 p2 = sorted_players.pop(i)
-    #                 break
-    #         if p2:
-    #             matches.append(Match(p1, p2))
-    #         elif p1:  # If p2 is None, p1 gets a bye
-    #             matches.append(Match(p1, None))
-
-    #     self.matches.extend(matches)
-    #     self.round += 1
-    #     return matches
+class DoubleEliminationGroup(KnockoutGroup):
+    def _gen_matches(self) -> List[Match]:
+        """Similar to SingleEliminationGroup but with losers bracket"""
+        # Implementation similar to SingleEliminationGroup but with additional
+        # losers bracket matches. For brevity, I'm leaving this as an exercise
+        # as it follows the same pattern but with more complexity.
+        raise NotImplementedError("Double elimination not yet implemented")
