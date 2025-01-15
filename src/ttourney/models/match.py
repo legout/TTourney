@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from .player import Player
 
@@ -49,7 +49,7 @@ class Match:
         else:
             self.sets = sets
         self.set_result()
-        self.set_winner()
+        self.set_winner_looser()
 
     def set_result(self, result: Tuple[int, int] = None):
         """Set the result of the match. If result is None, calculate the result from the sets.
@@ -69,7 +69,7 @@ class Match:
         wins_p2 = sum(1 for s in self.sets if s[1] > s[0])
         self.result = (wins_p1, wins_p2)
 
-    def set_winner(self, winner: Player = None):
+    def set_winner_looser(self, winner: Player = None):
         """Set the winner of the match. If winner is None, calculate the winner from the result.
 
         Args:

@@ -1,88 +1,13 @@
 import datetime as dt
 import random
-from dataclasses import dataclass
-from typing import Dict, List, Set, Tuple
+from typing import List, Set, Tuple
 
 import pandas as pd
 import polars as pl
 
 from .match import Match
 from .player import Player
-
-
-@dataclass
-class Result:
-    round: int | str
-    wins: int
-    losses: int
-    sets_won: int
-    sets_lost: int
-    balls_won: int
-    balls_lost: int
-    set_difference: int
-    ball_difference: int
-    direct_encounters: Dict[str, int] = None
-
-    def add_match(self, match: Match, player_id: str):
-        if self.direct_encounters is None:
-            self.direct_encounters = {}
-
-        if match.winner.id == player_id:
-            self.wins += 1
-        else:
-            self.losses += 1
-
-        if match.player1.id == player_id:
-            self.sets_won += match.result[0]
-            self.sets_lost += match.result[1]
-            self.direct_encounters[match.player2.id] = (
-                1 if match.winner.id == player_id else -1
-            )
-        else:
-            self.sets_won += match.result[1]
-            self.sets_lost += match.result[0]
-            self.direct_encounters[match.player1.id] = (
-                1 if match.winner.id == player_id else -1
-            )
-
-        for set in match.sets:
-            if match.player1.id == player_id:
-                self.balls_won += set[0]
-                self.balls_lost += set[1]
-            else:
-                self.balls_won += set[1]
-                self.balls_lost += set[0]
-
-        self.set_difference = self.sets_won - self.sets_lost
-        self.ball_difference = self.balls_won - self.balls_lost
-        self.round = match.round
-
-    def as_dict(self):
-        return {
-            "wins": self.wins,
-            "losses": self.losses,
-            "sets_won": self.sets_won,
-            "sets_lost": self.sets_lost,
-            "balls_won": self.balls_won,
-            "balls_lost": self.balls_lost,
-            "set_difference": self.set_difference,
-            "ball_difference": self.ball_difference,
-            "direct_encounters": self.direct_encounters,
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict):
-        return cls(
-            wins=data["wins"],
-            losses=data["losses"],
-            sets_won=data["sets_won"],
-            sets_lost=data["sets_lost"],
-            balls_won=data["balls_won"],
-            balls_lost=data["balls_lost"],
-            set_difference=data["set_difference"],
-            ball_difference=data["ball_difference"],
-            direct_encounters=data["direct_encounters"],
-        )
+from .round import Round
 
 
 class BaseGroup:
@@ -90,12 +15,36 @@ class BaseGroup:
         self.name = name
         self.players = players
         self.players.sort(key=lambda p: p.score, reverse=True)
-        self.matches: List[Match] = []
-        self.ranking: List[Player] = self.players[:]
+        self.rounds: List[Round] = []
+        #self.ranking: List[Player] = self.players[:]
         self.excluded_matches: Set[Tuple[str, str]] = set()
         self._stats = {}
         self._buchholz_scores = {}
         self._direct_encounter_matrix = {}
+
+    @property
+    def matches(self) -> List[Match]:
+        return [m for r in self.rounds for m in r.matches]
+
+    @property
+    def current_round_number(self) -> int:
+        return len(self.rounds)
+
+    @property
+    def matches_df(self) -> pd.DataFrame:
+        if not self.matches:
+            return pl.DataFrame()
+        return pl.DataFrame([m.as_dict() for m in self.matches])
+
+    @property
+    def rounds_completed(self) -> int:
+        return sum(1 for r in self.rounds if r.is_completed)
+
+    def add_round(self, name: str = None, stage: str = None) -> Round:
+        round_num = self.current_round_number + 1
+        new_round = Round(round_num, [], name, stage)
+        self.rounds.append(new_round)
+        return new_round
 
     @property
     def players_df(self) -> pd.DataFrame:
@@ -104,35 +53,8 @@ class BaseGroup:
         return pl.DataFrame([p.as_dict() for p in self.players])
 
     @property
-    def matches_df(self) -> pd.DataFrame:
-        if len(self.matches) == 0:
-            return pl.DataFrame()
-        return pl.DataFrame([m.as_dict() for m in self.matches])
-
-    @property
     def matches_per_round(self) -> int:
         return len(self.players) // 2
-
-    @property
-    def rounds_completed(self) -> int:
-        if len(self.matches) == 0:
-            return 0
-        return (
-            self.matches_df.filter(pl.col("is_completed"))
-            .group_by("round")
-            .agg(pl.count("result") == self.matches_per_round)
-            .filter(pl.col("result"))
-            .select(pl.max("round"))[0, "round"]
-        )
-
-    @property
-    def current_round(self) -> int:
-        if len(self.matches) == 0:
-            return 0
-
-        if self.match_df.select(pl.max("round"))[0, "round"] > self.rounds_completed:
-            return self.rounds_completed + 1
-        return self.rounds_completed
 
     def _get_stats(self, round: int = None, update: bool = False) -> pl.DataFrame:
         if round is None:
@@ -154,9 +76,9 @@ class BaseGroup:
                     pl.lit(round).alias("round"),
                     pl.lit(player.id).alias("player_id"),
                     pl.lit(player.score).alias("score"),
-                    (pl.col("winner") == player.id).cast(pl.int32).sum().alias("wins"),
+                    (pl.col("winner") == player.id).cast(pl.Int32).sum().alias("wins"),
                     (pl.col("winner") != player.id)
-                    .cast(pl.int32)
+                    .cast(pl.Int32)
                     .sum()
                     .alias("losses"),
                     (
@@ -306,9 +228,9 @@ class BaseGroup:
     def _get_buchholz_score(self, player_id: str, round: str | None = None) -> int:
         if round is None:
             round = self.rounds_completed
-        return self._get_buchholz_scores(round).filter(pl.col("player_id") == player_id)[
-            0, "buchholz_score"
-        ]
+        return self._get_buchholz_scores(round).filter(
+            pl.col("player_id") == player_id
+        )[0, "buchholz_score"]
 
     def _get_set_difference(self, player_id: str, round: int | None = None) -> int:
         if round is None:
@@ -358,27 +280,30 @@ class BaseGroup:
     def gen_matches(self) -> List[Match]:
         raise NotImplementedError
 
+
 class SwissSystemGroup(BaseGroup):
     def __init__(self, players: List[Player], name: str, date: dt.date):
         super().__init__(players, name)
         self.date = date
 
     def _gen_first_round(self):
+        round = self.add_round("First Round")
+
         top_half = self.players[: len(self.players) // 2]
         bottom_half = self.players[len(self.players) // 2:]
         top_half.sort(key=lambda p: p.score, reverse=True)
         random.shuffle(bottom_half)
 
-        self.round += 1
-
         for p1, p2 in zip(top_half, bottom_half):
-            self.matches.append(Match(p1, p2, self.round))
+            round.add_match(Match(p1, p2, round.number))
 
-    def _gen_next_round(self) -> List[Match]:
+    def _gen_next_round(self):
+        round = self.add_round(f"Round {self.current_round_number}")
+
         sorted_players = self.players[:]
-        sorted_players.sort(key=lambda p: self.wins(p.id), reverse=True)
+        sorted_players.sort(key=lambda p: self._get_wins(p.id), reverse=True)
 
-        matches = []
+        # Rest of the existing matching logic, but use round.add_match()
         n = len(sorted_players)
 
         # Add a dummy player if the number of players is odd
@@ -397,18 +322,15 @@ class SwissSystemGroup(BaseGroup):
                     p2 = sorted_players.pop(i)
                     break
             if p2:
-                matches.append(Match(p1, p2))
+                round.add_match(Match(p1, p2, round.number))
             elif p1:  # If p2 is None, p1 gets a bye
-                matches.append(Match(p1, None))
-
-        self.matches.extend(matches)
-        self.round += 1
+                round.add_match(Match(p1, None, round.number))
 
     def _gen_matches(self) -> List[Match]:
-        if self.round == 0:
-            self.gen_first_round()
+        if self.current_round_number == 0:
+            self._gen_first_round()
         else:
-            self.gen_next_round()
+            self._gen_next_round()
 
     def _get_ranking(self, round: int | None = None) -> List[Player]:
         if round is None:
@@ -470,6 +392,7 @@ class SwissSystemGroup(BaseGroup):
 
         return players
 
+
 class BergerTableGroup(BaseGroup):
     def __init__(self, players: List[Player], name: str, date: dt.date):
         super().__init__(players, name)
@@ -484,7 +407,7 @@ class BergerTableGroup(BaseGroup):
         n = len(self.players)
         rounds = []
         players = self.players[:]
-        
+
         # Add a dummy player for odd number of players
         if n % 2 == 1:
             players.append(None)
@@ -492,22 +415,22 @@ class BergerTableGroup(BaseGroup):
 
         # Generate all rounds
         for round_num in range(n - 1):
-            round_matches = []
-            
+            round = self.add_round(f"Round {round_num + 1}")
+
             # Generate matches for this round
             for i in range(n // 2):
                 p1 = players[i]
                 p2 = players[n - 1 - i]
                 if p1 and p2:  # Only create match if both players are real
-                    match = Match(p1, p2, round_num + 1, self.date)
-                    round_matches.append(match)
-            
+                    match = Match(p1, p2, round.number, self.date)
+                    round.add_match(match)
+
             # Rotate players for next round: keep first player fixed, rotate others
             players.insert(1, players.pop())
-            rounds.append(round_matches)
+            rounds.append(round)
 
         # Add all matches to the group
-        self.matches.extend([match for round in rounds for match in round])
+        self.rounds.extend(rounds)
         return self.matches
 
     def _get_ranking(self, round: int | None = None) -> List[Player]:
@@ -531,11 +454,9 @@ class BergerTableGroup(BaseGroup):
         i = 0
         while i < len(players):
             tied_start = i
-            while (
-                i + 1 < len(players)
-                and self._get_wins(players[i].id, round)
-                == self._get_wins(players[i + 1].id, round)
-            ):
+            while i + 1 < len(players) and self._get_wins(
+                players[i].id, round
+            ) == self._get_wins(players[i + 1].id, round):
                 i += 1
 
             if i > tied_start:
@@ -553,6 +474,7 @@ class BergerTableGroup(BaseGroup):
 
         return players
 
+
 class RoundRobinGroup(BaseGroup):
     def __init__(self, players: List[Player], name: str, date: dt.date):
         super().__init__(players, name)
@@ -565,7 +487,8 @@ class RoundRobinGroup(BaseGroup):
             for j in range(i + 1, n):
                 p2 = self.players[j]
                 round_num = i + 1  # Simple round assignment
-                self.matches.append(Match(p1, p2, round_num, self.date))
+                round = self.add_round(f"Round {round_num}")
+                round.add_match(Match(p1, p2, round.number, self.date))
         return self.matches
 
     def _get_ranking(self, round: int | None = None) -> List[Player]:
@@ -589,11 +512,9 @@ class RoundRobinGroup(BaseGroup):
         i = 0
         while i < len(players):
             tied_start = i
-            while (
-                i + 1 < len(players)
-                and self._get_wins(players[i].id, round)
-                == self._get_wins(players[i + 1].id, round)
-            ):
+            while i + 1 < len(players) and self._get_wins(
+                players[i].id, round
+            ) == self._get_wins(players[i + 1].id, round):
                 i += 1
 
             if i > tied_start:
@@ -611,9 +532,10 @@ class RoundRobinGroup(BaseGroup):
 
         return players
 
+
 class KnockoutGroup(BaseGroup):
     """Base class for knockout tournaments with qualification rounds"""
-    
+
     def __init__(self, players: List[Player], name: str, date: dt.date):
         super().__init__(players, name)
         self.date = date
@@ -632,38 +554,41 @@ class KnockoutGroup(BaseGroup):
         while size < n:
             size *= 2
         return size // 2  # We want the largest size that's smaller than n
-        
+
     def _get_qualified_count(self) -> int:
         """Get number of players directly qualifying for main round"""
         knockout_size = self._get_knockout_size()
         return max(0, 2 * knockout_size - len(self.players))
-        
+
     def _get_qualification_pairs(self) -> List[Tuple[Player, Player]]:
         """Match players for qualification rounds"""
-        #knockout_size = self._get_knockout_size()
+        # knockout_size = self._get_knockout_size()
         qualified_count = self._get_qualified_count()
-        
+
         # Sort players by score
         sorted_players = sorted(self.players, key=lambda p: p.score, reverse=True)
-        
+
         # Top players qualify directly
-        #qualified = sorted_players[:qualified_count]
+        # qualified = sorted_players[:qualified_count]
         remaining = sorted_players[qualified_count:]
-        
+
         # Pair remaining players for qualification
         # Higher ranked vs lower ranked
         pairs = []
         n = len(remaining)
         for i in range(n // 2):
-            pairs.append((remaining[i], remaining[n-1-i]))
-            
+            pairs.append((remaining[i], remaining[n - 1 - i]))
+
         return pairs
-        
+
     def _assign_stage_name(self, round_size: int) -> str:
         return self.stage_names.get(round_size, f"Round of {round_size}")
 
+
 class SingleEliminationGroup(KnockoutGroup):
-    def _get_seeded_pairs(self, players: List[Player], round_size: int) -> List[Tuple[Player, Player]]:
+    def _get_seeded_pairs(
+        self, players: List[Player], round_size: int
+    ) -> List[Tuple[Player, Player]]:
         """Create properly seeded pairs for a knockout round.
         Uses standard tournament seeding to keep top seeds apart until later rounds."""
         if len(players) <= 2:
@@ -671,9 +596,10 @@ class SingleEliminationGroup(KnockoutGroup):
 
         # Create seed positions for perfect bracket
         seeds = list(range(1, round_size + 1))
-        
+
         # Standard tournament bracket ordering
         ordered_positions = []
+
         def fill_bracket(start: int, end: int):
             if start == end:
                 return
@@ -681,13 +607,13 @@ class SingleEliminationGroup(KnockoutGroup):
             ordered_positions.extend([start + 1, end + 1])
             fill_bracket(start, mid - 1)
             fill_bracket(mid, end - 1)
-            
+
         fill_bracket(0, round_size - 1)
-        
+
         # Map players to their positions
         seeded_players = sorted(players, key=lambda p: p.score, reverse=True)
         player_map = {pos: player for pos, player in zip(seeds, seeded_players)}
-        
+
         # Create pairs based on ordered positions
         pairs = []
         for i in range(0, len(ordered_positions), 2):
@@ -696,63 +622,42 @@ class SingleEliminationGroup(KnockoutGroup):
                 p2 = player_map.get(ordered_positions[i + 1])
                 if p1 and p2:  # Only create pair if both players exist
                     pairs.append((p1, p2))
-        
+
         return pairs
 
     def _gen_matches(self) -> List[Match]:
-        """Generate knockout matches with qualification rounds and proper seeding"""
-        if len(self.matches) > 0:
+        if self.rounds:
             return []  # All matches generated at start
-            
-        round_num = 1
-        knockout_size = self._get_knockout_size()
-        qualified_count = self._get_qualified_count()
-        
-        # Sort players by score for initial seeding
-        sorted_players = sorted(self.players, key=lambda p: p.score, reverse=True)
-        
-        # Handle qualification round if needed
+
+        # Qualification round
         qual_pairs = self._get_qualification_pairs()
-        qual_matches = []
-        for p1, p2 in qual_pairs:
-            match = Match(p1, p2, round_num, self.date)
-            match.stage = "Qualification"
-            qual_matches.append(match)
-        
-        self.matches.extend(qual_matches)
-        round_num += 1
-        
-        # Prepare players for first knockout round
-        knockout_players = sorted_players[:qualified_count]
-        knockout_players.extend([None] * len(qual_matches))
-        
-        # Generate knockout rounds with proper seeding
-        current_round_size = len(knockout_players)
-        while current_round_size > 1:
-            stage_name = self._assign_stage_name(current_round_size)
-            pairs = self._get_seeded_pairs(knockout_players, current_round_size)
-            
-            round_matches = []
+        if qual_pairs:
+            qual_round = self.add_round("Qualification", "Qualification")
+            for p1, p2 in qual_pairs:
+                qual_round.add_match(Match(p1, p2, qual_round.number))
+
+        # Generate knockout rounds
+        knockout_size = self._get_knockout_size()
+        current_size = knockout_size
+
+        while current_size >= 2:
+            stage_name = self._assign_stage_name(current_size)
+            round = self.add_round(stage_name, stage_name)
+
+            pairs = self._get_seeded_pairs(self.players, current_size)
             for p1, p2 in pairs:
-                match = Match(p1, p2, round_num, self.date)
-                match.stage = stage_name
-                round_matches.append(match)
-            
-            self.matches.extend(round_matches)
-            knockout_players = [None] * (current_round_size // 2)
-            current_round_size //= 2
-            round_num += 1
-        
-        return self.matches
+                round.add_match(Match(p1, p2, round.number))
+
+            current_size //= 2
 
     def _get_ranking(self, round: int | None = None) -> List[Player]:
         """Ranking based on stage reached and original seeding"""
         if round is None:
             round = self.rounds_completed
-            
+
         # Track furthest stage reached by each player
         player_stages = {p.id: ("Not Qualified", -1, p.score) for p in self.players}
-        
+
         # Order stages by importance
         stage_order = {
             "Final": 6,
@@ -762,25 +667,34 @@ class SingleEliminationGroup(KnockoutGroup):
             "Round of 32": 2,
             "Qualification": 1,
         }
-        
+
         for match in self.matches:
             if match.round <= round and match.is_completed:
                 stage_value = stage_order.get(match.stage, 0)
-                
+
                 # Winner advances
                 if match.winner:
                     current_stage = player_stages[match.winner.id]
-                    player_stages[match.winner.id] = (match.stage, stage_value, current_stage[2])
-                
+                    player_stages[match.winner.id] = (
+                        match.stage,
+                        stage_value,
+                        current_stage[2],
+                    )
+
                 # Loser gets eliminated at this stage
                 if match.loser:
                     current_stage = player_stages[match.loser.id]
-                    player_stages[match.loser.id] = (match.stage, stage_value, current_stage[2])
-        
+                    player_stages[match.loser.id] = (
+                        match.stage,
+                        stage_value,
+                        current_stage[2],
+                    )
+
         # Sort players by stage reached, then by original score
         players = self.players[:]
         players.sort(key=lambda p: player_stages[p.id], reverse=True)
         return players
+
 
 class DoubleEliminationGroup(KnockoutGroup):
     def _gen_matches(self) -> List[Match]:

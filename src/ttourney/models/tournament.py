@@ -1,6 +1,6 @@
 import uuid
 from datetime import date
-from typing import List, Optional
+from typing import List
 
 from ..db.database import get_db_connection
 from .group import Group

@@ -1,31 +1,32 @@
 import uuid
 from dataclasses import dataclass
 from typing import List, Optional
-
-import pandas as pd
-import polars as pl
 from munch import munchify
 
 
-@dataclass(frozen=True, eq=True)
+@dataclass
 class Player:
     first_name: str
-    last_name: str
-    score: int
+    last_name: str | None = None
+    score: int = 0
     start_number: int | str = 0
     age: Optional[int] = None
     gender: Optional[str] = None
     club: Optional[str] = None
     id: str = ""
+    name: str | None = None
 
-    def __post__init__(self):
-        self.name = f"{self.first_name} {self.last_name}"
-        if id == "":
+    def __post_init__(self):
+        if self.last_name is None:
+            self.name = self.first_name
+        else:
+            self.name = f"{self.first_name} {self.last_name}"
+        if self.id == "":
             base = f"{self.first_name[:6]}_{self.last_name[:6]}"
             if self.club:
                 base += f"_{self.club[:12]}"
             base += f"_{str(uuid.uuid4())[:4]}"
-            base = base.lower().replace(" ", "_")
+            self.id = base.lower().replace(" ", "_")
 
     def __str__(self):
         return f"{self.name}, {self.club} (Score: {self.score})"
