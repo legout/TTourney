@@ -16,7 +16,7 @@ class BaseGroup:
         self.players = players
         self.players.sort(key=lambda p: p.score, reverse=True)
         self.rounds: List[Round] = []
-        #self.ranking: List[Player] = self.players[:]
+        # self.ranking: List[Player] = self.players[:]
         self.excluded_matches: Set[Tuple[str, str]] = set()
         self._stats = {}
         self._buchholz_scores = {}
@@ -290,7 +290,7 @@ class SwissSystemGroup(BaseGroup):
         round = self.add_round("First Round")
 
         top_half = self.players[: len(self.players) // 2]
-        bottom_half = self.players[len(self.players) // 2:]
+        bottom_half = self.players[len(self.players) // 2 :]
         top_half.sort(key=lambda p: p.score, reverse=True)
         random.shuffle(bottom_half)
 
@@ -365,7 +365,7 @@ class SwissSystemGroup(BaseGroup):
 
             # If we found tied players
             if i > tied_start:
-                tied_players = players[tied_start:i + 1]
+                tied_players = players[tied_start : i + 1]
                 # Sort tied players by direct matches if possible
                 all_played = all(
                     any(
@@ -386,7 +386,7 @@ class SwissSystemGroup(BaseGroup):
                         ),
                         reverse=True,
                     )
-                    players[tied_start:i + 1] = tied_players
+                    players[tied_start : i + 1] = tied_players
 
             i += 1
 
@@ -460,7 +460,7 @@ class BergerTableGroup(BaseGroup):
                 i += 1
 
             if i > tied_start:
-                tied_players = players[tied_start:i + 1]
+                tied_players = players[tied_start : i + 1]
                 # Sort tied players by direct matches
                 tied_players.sort(
                     key=lambda p: self._get_direct_match_wins(
@@ -468,7 +468,7 @@ class BergerTableGroup(BaseGroup):
                     ),
                     reverse=True,
                 )
-                players[tied_start:i + 1] = tied_players
+                players[tied_start : i + 1] = tied_players
 
             i += 1
 
@@ -518,7 +518,7 @@ class RoundRobinGroup(BaseGroup):
                 i += 1
 
             if i > tied_start:
-                tied_players = players[tied_start:i + 1]
+                tied_players = players[tied_start : i + 1]
                 # Sort tied players by direct matches
                 tied_players.sort(
                     key=lambda p: self._get_direct_match_wins(
@@ -526,7 +526,7 @@ class RoundRobinGroup(BaseGroup):
                     ),
                     reverse=True,
                 )
-                players[tied_start:i + 1] = tied_players
+                players[tied_start : i + 1] = tied_players
 
             i += 1
 
