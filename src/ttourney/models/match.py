@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Tuple, Union, Any, Dict
 
 from .player import Player
-
+import pyarrow as pa
 
 @dataclass
 class Set:
@@ -77,6 +77,9 @@ class Set:
             "points_diff": self.points_diff,
         }
 
+    @property
+    def df(self):
+        return pa.Table.from_pylist([self.as_dict()])
 
 @dataclass
 class Match:
@@ -152,6 +155,9 @@ class Match:
             "match_id": self.match_id,
             "is_completed": self.is_completed,
         }
+    @property
+    def df(self):
+        return pa.Table.from_pylist([self.as_dict()])
 
     @property
     def points(self):

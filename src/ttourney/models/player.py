@@ -1,8 +1,8 @@
 import uuid
 from dataclasses import dataclass
 from typing import List, Optional
-from munch import munchify
-
+import random
+import pyarrow as pa
 
 @dataclass
 class Player:
@@ -22,10 +22,10 @@ class Player:
         else:
             self.name = f"{self.first_name} {self.last_name}"
         if self.id == "":
-            base = f"{self.first_name[:6]}_{self.last_name[:6]}"
+            base = f"{self.first_name[0]}{self.last_name[0]}"
             if self.club:
-                base += f"_{self.club[:12]}"
-            base += f"_{str(uuid.uuid4())[:4]}"
+                base += "_" + "".join([p[:3] for p in self.club.split(" ")])
+            base += f"_{str(random.randint(1000, 9999))}"
             self.id = base.lower().replace(" ", "_")
 
     def __str__(self):
@@ -42,9 +42,9 @@ class Player:
             "gender": self.gender,
             "club": self.club,
         }
-
-    def munchify(self):
-        return munchify(self.as_dict())
+    @property
+    def df(self):
+        return pa.Table.from_pylist([self.as_dict()])
 
     @classmethod
     def from_dict(cls, data):
