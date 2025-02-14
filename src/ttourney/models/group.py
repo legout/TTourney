@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Optional
 import pyarrow as pa
 
+
 @dataclass
 class Round:
     number: int
@@ -76,11 +77,11 @@ class BaseGroup:
     def current_round_number(self) -> int:
         return len(self.rounds)
 
-    @property
-    def matches_df(self) -> pd.DataFrame:
-        if not self.matches:
-            return pl.DataFrame()
-        return pl.DataFrame([m.as_dict() for m in self.matches])
+    #@property
+    #def matches_df(self) -> pd.DataFrame:
+    #    if not self.matches:
+    #        return pl.DataFrame()
+    #    return pl.DataFrame([m.as_dict() for m in self.matches])
 
     @property
     def rounds_completed(self) -> int:
@@ -92,225 +93,225 @@ class BaseGroup:
         self.rounds.append(new_round)
         return new_round
 
-    @property
-    def players_df(self) -> pd.DataFrame:
-        if len(self.players) == 0:
-            return pl.DataFrame()
-        return pl.DataFrame([p.as_dict() for p in self.players])
+    #@property
+    #def players_df(self) -> pd.DataFrame:
+    #    if len(self.players) == 0:
+    #        return pl.DataFrame()
+    #    return pl.DataFrame([p.as_dict() for p in self.players])
 
     @property
     def matches_per_round(self) -> int:
         return len(self.players) // 2
 
-    def _get_stats(self, round: int = None, update: bool = False) -> pl.DataFrame:
-        if round is None:
-            round = self.rounds_completed
+    # def _get_stats(self, round: int = None, update: bool = False) -> pl.DataFrame:
+    #     if round is None:
+    #         round = self.rounds_completed
 
-        if round in self._stats and not update:
-            return self._stats[round]
+    #     if round in self._stats and not update:
+    #         return self._stats[round]
 
-        stats = []
-        for player in self.players:
-            stats.append(
-                self.matches_df.filter(pl.col("round") <= round)
-                .filter(pl.col("is_completed"))
-                .filter(
-                    (pl.col("player1").struct["id"] == player.id)
-                    | (pl.col("player2").struct["id"] == player.id)
-                )
-                .select(
-                    pl.lit(round).alias("round"),
-                    pl.lit(player.id).alias("player_id"),
-                    pl.lit(player.score).alias("score"),
-                    (pl.col("winner") == player.id).cast(pl.Int32).sum().alias("wins"),
-                    (pl.col("winner") != player.id)
-                    .cast(pl.Int32)
-                    .sum()
-                    .alias("losses"),
-                    (
-                        pl.when(pl.col("player1").struct["id"] == player.id)
-                        .then(pl.col("result").list[0])
-                        .otherwise(pl.col("result").list[1])
-                        .sum()
-                        .alias("sets_won")
-                    ),
-                    (
-                        pl.when(pl.col("player1").struct["id"] == player.id)
-                        .then(pl.col("result").list[1])
-                        .otherwise(pl.col("result").list[0])
-                        .sum()
-                        .alias("sets_lost")
-                    ),
-                    (
-                        pl.when(pl.col("player1").struct["id"] == player.id)
-                        .then(pl.col("sets").list[0])
-                        .otherwise(pl.col("sets").list[1])
-                        .sum()
-                        .alias("balls_won")
-                    ),
-                    (
-                        pl.when(pl.col("player1").struct["id"] == player.id)
-                        .then(pl.col("sets").list[1])
-                        .otherwise(pl.col("sets").list[0])
-                        .sum()
-                        .alias("balls_lost")
-                    ),
-                    (pl.col("sets_won") - pl.col("sets_lost")).alias("set_difference"),
-                    (pl.col("balls_won") - pl.col("balls_lost")).alias(
-                        "ball_difference"
-                    ),
-                )
-            )
-        stats = pl.DataFrame(stats)
-        self._stats[round] = stats
-        return stats
+    #     stats = []
+    #     for player in self.players:
+    #         stats.append(
+    #             self.matches_df.filter(pl.col("round") <= round)
+    #             .filter(pl.col("is_completed"))
+    #             .filter(
+    #                 (pl.col("player1").struct["id"] == player.id)
+    #                 | (pl.col("player2").struct["id"] == player.id)
+    #             )
+    #             .select(
+    #                 pl.lit(round).alias("round"),
+    #                 pl.lit(player.id).alias("player_id"),
+    #                 pl.lit(player.score).alias("score"),
+    #                 (pl.col("winner") == player.id).cast(pl.Int32).sum().alias("wins"),
+    #                 (pl.col("winner") != player.id)
+    #                 .cast(pl.Int32)
+    #                 .sum()
+    #                 .alias("losses"),
+    #                 (
+    #                     pl.when(pl.col("player1").struct["id"] == player.id)
+    #                     .then(pl.col("result").list[0])
+    #                     .otherwise(pl.col("result").list[1])
+    #                     .sum()
+    #                     .alias("sets_won")
+    #                 ),
+    #                 (
+    #                     pl.when(pl.col("player1").struct["id"] == player.id)
+    #                     .then(pl.col("result").list[1])
+    #                     .otherwise(pl.col("result").list[0])
+    #                     .sum()
+    #                     .alias("sets_lost")
+    #                 ),
+    #                 (
+    #                     pl.when(pl.col("player1").struct["id"] == player.id)
+    #                     .then(pl.col("sets").list[0])
+    #                     .otherwise(pl.col("sets").list[1])
+    #                     .sum()
+    #                     .alias("balls_won")
+    #                 ),
+    #                 (
+    #                     pl.when(pl.col("player1").struct["id"] == player.id)
+    #                     .then(pl.col("sets").list[1])
+    #                     .otherwise(pl.col("sets").list[0])
+    #                     .sum()
+    #                     .alias("balls_lost")
+    #                 ),
+    #                 (pl.col("sets_won") - pl.col("sets_lost")).alias("set_difference"),
+    #                 (pl.col("balls_won") - pl.col("balls_lost")).alias(
+    #                     "ball_difference"
+    #                 ),
+    #             )
+    #         )
+    #     stats = pl.DataFrame(stats)
+    #     self._stats[round] = stats
+    #     return stats
 
-    def _get_buchholz_scores(
-        self, round: int = None, update: bool = False
-    ) -> pl.DataFrame:
-        if round is None:
-            round = self.rounds_completed
+    # def _get_buchholz_scores(
+    #     self, round: int = None, update: bool = False
+    # ) -> pl.DataFrame:
+    #     if round is None:
+    #         round = self.rounds_completed
 
-        if round in self._buchholz_scores and not update:
-            return self._buchholz_scores[round]
+    #     if round in self._buchholz_scores and not update:
+    #         return self._buchholz_scores[round]
 
-        stats = self._get_stats(round)
-        buchholz_scores = []
-        for player in self.players:
-            opponent_ids = (
-                self.matches_df.filter(pl.col("round") <= round)
-                .filter(pl.col("is_completed"))
-                .filter(
-                    (pl.col("player1").struct["id"] == player.id)
-                    | (pl.col("player2").struct["id"] == player.id)
-                )
-                .select(
-                    pl.when(pl.col("player1").struct["id"] == player.id)
-                    .then(pl.col("player2").struct["id"])
-                    .otherwise(pl.col("player1").struct["id"])
-                    .alias("opponent_id")
-                )
-                .unique()["opponent_id"]
-                .to_list()
-            )
-            buchholz_score = sum(
-                stats.filter(pl.col("player_id").isin(opponent_ids))["wins"]
-            )
-            buchholz_scores.append({player.id: buchholz_score})
+    #     stats = self._get_stats(round)
+    #     buchholz_scores = []
+    #     for player in self.players:
+    #         opponent_ids = (
+    #             self.matches_df.filter(pl.col("round") <= round)
+    #             .filter(pl.col("is_completed"))
+    #             .filter(
+    #                 (pl.col("player1").struct["id"] == player.id)
+    #                 | (pl.col("player2").struct["id"] == player.id)
+    #             )
+    #             .select(
+    #                 pl.when(pl.col("player1").struct["id"] == player.id)
+    #                 .then(pl.col("player2").struct["id"])
+    #                 .otherwise(pl.col("player1").struct["id"])
+    #                 .alias("opponent_id")
+    #             )
+    #             .unique()["opponent_id"]
+    #             .to_list()
+    #         )
+    #         buchholz_score = sum(
+    #             stats.filter(pl.col("player_id").isin(opponent_ids))["wins"]
+    #         )
+    #         buchholz_scores.append({player.id: buchholz_score})
 
-        buchholz_scores = pl.DataFrame(buchholz_scores)
-        self._buchholz_scores[round] = buchholz_scores
-        return buchholz_scores
+    #     buchholz_scores = pl.DataFrame(buchholz_scores)
+    #     self._buchholz_scores[round] = buchholz_scores
+    #     return buchholz_scores
 
-    def _get_direct_encounter_matrix(
-        self, round: int = None, update: bool = False
-    ) -> pl.DataFrame:
-        if round is None:
-            round = self.rounds_completed
+    # def _get_direct_encounter_matrix(
+    #     self, round: int = None, update: bool = False
+    # ) -> pl.DataFrame:
+    #     if round is None:
+    #         round = self.rounds_completed
 
-        if round in self._direct_encounter_matrix and not update:
-            return self._direct_encounter_matrix[round]
-        # Add direct match results
-        direct_encounters = []
-        for player in self.players:
-            direct_encounter = {p.id: 0 for p in self.players}
+    #     if round in self._direct_encounter_matrix and not update:
+    #         return self._direct_encounter_matrix[round]
+    #     # Add direct match results
+    #     direct_encounters = []
+    #     for player in self.players:
+    #         direct_encounter = {p.id: 0 for p in self.players}
 
-            matches = (
-                self.matches_df.filter(pl.col("round") <= round)
-                .filter(
-                    (pl.col("player1").struct["id"] == player.id)
-                    | (pl.col("player2").struct["id"] == player.id)
-                )
-                .filter(pl.col("is_completed"))
-            )
+    #         matches = (
+    #             self.matches_df.filter(pl.col("round") <= round)
+    #             .filter(
+    #                 (pl.col("player1").struct["id"] == player.id)
+    #                 | (pl.col("player2").struct["id"] == player.id)
+    #             )
+    #             .filter(pl.col("is_completed"))
+    #         )
 
-            for match in matches.to_dicts():
-                opponent_id = (
-                    match["player1"]["id"]
-                    if match["player1"]["id"] != player.id
-                    else match["player2"]["id"]
-                )
-                direct_encounter[opponent_id] = (
-                    1 if match["winner"] == player.id else -1
-                )
-            direct_encounters.append(direct_encounter)
+    #         for match in matches.to_dicts():
+    #             opponent_id = (
+    #                 match["player1"]["id"]
+    #                 if match["player1"]["id"] != player.id
+    #                 else match["player2"]["id"]
+    #             )
+    #             direct_encounter[opponent_id] = (
+    #                 1 if match["winner"] == player.id else -1
+    #             )
+    #         direct_encounters.append(direct_encounter)
 
-        direct_encounters = pl.DataFrame(direct_encounters)
-        self._direct_encounter_matrix[round] = direct_encounters
-        return direct_encounters
+    #     direct_encounters = pl.DataFrame(direct_encounters)
+    #     self._direct_encounter_matrix[round] = direct_encounters
+    #     return direct_encounters
 
-    def _get_played_matches(self, round: int = None) -> Set[Tuple[str, str]]:
-        if round is None:
-            round = self.rounds_completed
-        matches = (
-            self.matches_df.filter(pl.col("round") <= round)
-            .filter(pl.col("is_completed"))
-            .to_dicts()
-        )
-        return {
-            [(m["player1"]["id"], m["player2"]["id"]) for m in matches]
-            + [(m["player2"]["id"], m["player1"]["id"]) for m in matches]
-        }
+    # def _get_played_matches(self, round: int = None) -> Set[Tuple[str, str]]:
+    #     if round is None:
+    #         round = self.rounds_completed
+    #     matches = (
+    #         self.matches_df.filter(pl.col("round") <= round)
+    #         .filter(pl.col("is_completed"))
+    #         .to_dicts()
+    #     )
+    #     return {
+    #         [(m["player1"]["id"], m["player2"]["id"]) for m in matches]
+    #         + [(m["player2"]["id"], m["player1"]["id"]) for m in matches]
+    #     }
 
-    @property
-    def direct_encounter_matrix(self) -> pl.DataFrame:
-        return self._get_direct_encounter_matrix()
+    # @property
+    # def direct_encounter_matrix(self) -> pl.DataFrame:
+    #     return self._get_direct_encounter_matrix()
 
-    @property
-    def buchholz_scores(self) -> pl.DataFrame:
-        return self._get_buchholz_scores()
+    # @property
+    # def buchholz_scores(self) -> pl.DataFrame:
+    #     return self._get_buchholz_scores()
 
-    @property
-    def stats(self) -> pl.DataFrame:
-        return self._get_stats()
+    # @property
+    # def stats(self) -> pl.DataFrame:
+    #     return self._get_stats()
 
-    def _get_wins(self, player_id: str, round: str | None = None) -> int:
-        if round is None:
-            round = self.rounds_completed
-        return self._get_stats(round).filter(pl.col("player_id") == player_id)[
-            0, "wins"
-        ]
+    # def _get_wins(self, player_id: str, round: str | None = None) -> int:
+    #     if round is None:
+    #         round = self.rounds_completed
+    #     return self._get_stats(round).filter(pl.col("player_id") == player_id)[
+    #         0, "wins"
+    #     ]
 
-    def _get_buchholz_score(self, player_id: str, round: str | None = None) -> int:
-        if round is None:
-            round = self.rounds_completed
-        return self._get_buchholz_scores(round).filter(
-            pl.col("player_id") == player_id
-        )[0, "buchholz_score"]
+    # def _get_buchholz_score(self, player_id: str, round: str | None = None) -> int:
+    #     if round is None:
+    #         round = self.rounds_completed
+    #     return self._get_buchholz_scores(round).filter(
+    #         pl.col("player_id") == player_id
+    #     )[0, "buchholz_score"]
 
-    def _get_set_difference(self, player_id: str, round: int | None = None) -> int:
-        if round is None:
-            round = self.rounds_completed
-        return self._get_stats(round).filter(pl.col("player_id") == player_id)[
-            0, "set_difference"
-        ]
+    # def _get_set_difference(self, player_id: str, round: int | None = None) -> int:
+    #     if round is None:
+    #         round = self.rounds_completed
+    #     return self._get_stats(round).filter(pl.col("player_id") == player_id)[
+    #         0, "set_difference"
+    #     ]
 
-    def _get_ball_difference(self, player_id: str, round: int | None = None) -> int:
-        if round is None:
-            round = self.rounds_completed
-        return self._get_stats(round).filter(pl.col("player_id") == player_id)[
-            0, "ball_difference"
-        ]
+    # def _get_ball_difference(self, player_id: str, round: int | None = None) -> int:
+    #     if round is None:
+    #         round = self.rounds_completed
+    #     return self._get_stats(round).filter(pl.col("player_id") == player_id)[
+    #         0, "ball_difference"
+    #     ]
 
-    def _get_direct_match_wins(
-        self, player_id: str, tied_player_ids: List[str], round: int | None = None
-    ) -> int:
-        if round is None:
-            round = self.rounds_completed
+    # def _get_direct_match_wins(
+    #     self, player_id: str, tied_player_ids: List[str], round: int | None = None
+    # ) -> int:
+    #     if round is None:
+    #         round = self.rounds_completed
 
-        return (
-            self.matches_df.filter(pl.col("round") <= round)
-            .filter(pl.col("is_completed"))
-            .filter(
-                (pl.col("player1").struct["id"] == player_id)
-                | (pl.col("player2").struct["id"] == player_id)
-            )
-            .filter(
-                pl.col("player1").struct["id"].isin(tied_player_ids)
-                | pl.col("player2").struct["id"].isin(tied_player_ids)
-            )
-            .filter(pl.col("winner") == player_id)
-        ).shape[0]
+    #     return (
+    #         self.matches_df.filter(pl.col("round") <= round)
+    #         .filter(pl.col("is_completed"))
+    #         .filter(
+    #             (pl.col("player1").struct["id"] == player_id)
+    #             | (pl.col("player2").struct["id"] == player_id)
+    #         )
+    #         .filter(
+    #             pl.col("player1").struct["id"].isin(tied_player_ids)
+    #             | pl.col("player2").struct["id"].isin(tied_player_ids)
+    #         )
+    #         .filter(pl.col("winner") == player_id)
+    #     ).shape[0]
 
     @property
     def played_matches(self) -> Set[Tuple[str, str]]:

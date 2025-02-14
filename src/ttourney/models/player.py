@@ -4,6 +4,7 @@ from typing import List, Optional
 import random
 import pyarrow as pa
 
+
 @dataclass
 class Player:
     first_name: str
@@ -42,6 +43,7 @@ class Player:
             "gender": self.gender,
             "club": self.club,
         }
+
     @property
     def df(self):
         return pa.Table.from_pylist([self.as_dict()])

@@ -19,5 +19,7 @@ build-backend = "hatchling.build"
 dev-dependencies = [
     "ipython>=8.31.0",
     "isort>=5.13.2",
+    "pandas>=2.2.3",
+    "polars>=1.21.0",
     "ruff>=0.8.6",
 ]
