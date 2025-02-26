@@ -19,7 +19,10 @@ build-backend = "hatchling.build"
 dev-dependencies = [
     "ipython>=8.31.0",
     "isort>=5.13.2",
+    "marimo>=0.11.4",
     "pandas>=2.2.3",
     "polars>=1.21.0",
+    "pydala2>=0.9.6",
     "ruff>=0.8.6",
+    "sqlglot>=26.6.0",
 ]

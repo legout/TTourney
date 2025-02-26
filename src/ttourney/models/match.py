@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from typing import List, Tuple, Union, Any, Dict
 
 from .player import Player
 import pyarrow as pa
+
 
 @dataclass
 class Set:
@@ -27,12 +27,12 @@ class Set:
         raise ValueError(f"Invalid score format: {score}")
 
     @classmethod
-    def from_tuple(cls, score: Tuple[int, int]) -> "Set":
+    def from_tuple(cls, score: tuple[int, int]) -> "Set":
         """Create a Set from a tuple like (11, 9)"""
         return cls(*score)
 
     @classmethod
-    def from_any(cls, score: Union[str, Tuple[int, int], "Set"]) -> "Set":
+    def from_any(cls, score: str | tuple[int, int]) -> "Set":
         """Create a Set from various input formats"""
         if isinstance(score, Set):
             return score
@@ -61,14 +61,14 @@ class Set:
         return 1 if self.points1 > self.points2 else 2
 
     @property
-    def points(self) -> Tuple[int, int]:
+    def points(self) -> tuple[int, int]:
         return (self.points1, self.points2)
 
     @property
     def points_diff(self) -> int:
         return self.points1 - self.points2
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, any]:
         return {
             "points1": self.points1,
             "points2": self.points2,
@@ -81,36 +81,38 @@ class Set:
     def df(self):
         return pa.Table.from_pylist([self.as_dict()])
 
+
 @dataclass
 class Match:
     player1: Player
     player2: Player
     round: int | str
-    sets: List[Set] = None
-    result: Tuple[int, int] = None
+    sets: list[Set] = None
+    result: tuple[int, int] = None
     winner: str = None
     looser: str = None
 
     def __post_init__(self):
-        self.match_id: str = f"{self.player1.id}_{self.player2.id}"
+        self.id: str = f"{self.player1.id}:{self.player2.id}"
+        self.player1
         if self.sets is None:
             self.sets = []
 
-    def add_set(self, score: Union[str, Tuple[int, int], Set]):
+    def add_set(self, score: str | tuple[int, int] | Set):
         """Add a set result to the match"""
         set_ = Set.from_any(score)
         if not set_.is_valid():
             raise ValueError(f"Invalid set result: {set_}")
         self.sets.append(set_)
-        self.update_result()
+        self._update_result()
 
-    def set_sets(self, *scores: Union[str, Tuple[int, int], Set]):
+    def set_sets(self, *sets: str | tuple[int, int] | Set):
         """Set all sets at once"""
         self.sets = []
-        for score in scores:
-            self.add_set(score)
+        for set in sets:
+            self.add_set(set)
 
-    def update_result(self):
+    def _update_result(self):
         """Update match result based on sets"""
         if not self.sets:
             self.result = None
@@ -143,7 +145,7 @@ class Match:
     def is_completed(self):
         return bool(self.winner)
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, any]:
         return {
             "player1": self.player1.as_dict(),
             "player2": self.player2.as_dict(),
@@ -152,9 +154,10 @@ class Match:
             "result": self.result,
             "winner": self.winner,
             "looser": self.looser,
-            "match_id": self.match_id,
+            "id": self.id,
             "is_completed": self.is_completed,
         }
+
     @property
     def df(self):
         return pa.Table.from_pylist([self.as_dict()])
